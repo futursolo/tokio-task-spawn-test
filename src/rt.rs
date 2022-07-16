@@ -105,7 +105,7 @@ impl Runtime {
         let mut worker = workers.next().expect("must have more than 1 worker.");
         let mut task_count = worker.task_count.load(Ordering::Relaxed);
 
-        for current_worker in workers.take(3) {
+        for current_worker in workers {
             if task_count == 0 {
                 // Use a for loop here so we don't have to search until the end.
                 break;
@@ -136,6 +136,9 @@ impl Runtime {
                 let _guard = guard;
 
                 f().await;
+
+                // If you remove this sleep, execution will become significantly slower (up to ~50%).
+                tokio::time::sleep(Duration::ZERO).await;
             });
         }));
     }
