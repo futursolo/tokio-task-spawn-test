@@ -1,52 +1,46 @@
 use std::time::{Duration, Instant};
 
-use futures::stream::{FuturesOrdered, StreamExt};
+use futures::channel::oneshot;
 use futures::Future;
+use tokio::spawn;
+use tokio::task::{spawn_local, LocalSet};
 use tokio_util::task::LocalPoolHandle;
+
+mod rt;
+
+pub use rt::Runtime;
 
 async fn run_test<Fut>(f: fn() -> Fut)
 where
     Fut: 'static + Send + Future<Output = ()>,
 {
-    let pool = LocalPoolHandle::new(num_cpus::get());
-
     for round in 1..=5 {
         println!("  Round: {}", round);
 
-        // Futures Ordered.
-        {
-            let start_time = Instant::now();
-            let mut furs = FuturesOrdered::new();
-
-            for _ in 0..1_000_000 {
-                furs.push(f());
-            }
-
-            while furs.next().await.is_some() {}
-
-            println!(
-                "    futures ordered: {}ms",
-                start_time.elapsed().as_millis()
-            );
-        }
-
         // spawn_local
         {
+            let local_set = LocalSet::new();
             let start_time = Instant::now();
 
-            pool.spawn_pinned(move || async move {
-                let mut handles = Vec::with_capacity(1_000_000);
+            local_set
+                .run_until(async move {
+                    let mut handles = Vec::with_capacity(1_000_000);
 
-                for _ in 0..1_000_000 {
-                    handles.push(tokio::task::spawn_local(f()));
-                }
+                    for _ in 0..1_000_000 {
+                        let (tx, rx) = oneshot::channel();
+                        spawn_local(async move {
+                            f().await;
+                            tx.send(()).expect("failed to send!")
+                        });
 
-                for handle in handles.into_iter() {
-                    handle.await.expect("task failed.");
-                }
-            })
-            .await
-            .expect("failed to complete.");
+                        handles.push(rx);
+                    }
+
+                    for handle in handles.into_iter() {
+                        handle.await.expect("task failed.");
+                    }
+                })
+                .await;
 
             println!(
                 "        spawn local: {}ms",
@@ -56,11 +50,18 @@ where
 
         // spawn_pinned to local pool
         {
+            let pool = LocalPoolHandle::new(num_cpus::get());
             let start_time = Instant::now();
             let mut handles = Vec::with_capacity(1_000_000);
 
             for _ in 0..1_000_000 {
-                handles.push(pool.spawn_pinned(f));
+                let (tx, rx) = oneshot::channel();
+                pool.spawn_pinned(move || async move {
+                    f().await;
+                    tx.send(()).expect("failed to send!")
+                });
+
+                handles.push(rx);
             }
 
             for handle in handles.into_iter() {
@@ -73,13 +74,71 @@ where
             );
         }
 
+        // spawn to runtime.
+        {
+            let runtime = Runtime::new();
+            let start_time = Instant::now();
+            let mut handles = Vec::with_capacity(1_000_000);
+
+            for _ in 0..1_000_000 {
+                let (tx, rx) = oneshot::channel();
+                runtime.spawn(async move {
+                    f().await;
+                    tx.send(()).expect("failed to send!")
+                });
+
+                handles.push(rx);
+            }
+
+            for handle in handles.into_iter() {
+                handle.await.expect("task failed.");
+            }
+
+            println!(
+                "         spawn (rt): {}ms",
+                start_time.elapsed().as_millis()
+            );
+        }
+
+        // spawn_pinned to runtime.
+        {
+            let runtime = Runtime::new();
+            let start_time = Instant::now();
+            let mut handles = Vec::with_capacity(1_000_000);
+
+            for _ in 0..1_000_000 {
+                let (tx, rx) = oneshot::channel();
+                runtime.spawn_pinned(move || async move {
+                    f().await;
+                    tx.send(()).expect("failed to send!")
+                });
+
+                handles.push(rx);
+            }
+
+            for handle in handles.into_iter() {
+                handle.await.expect("task failed.");
+            }
+
+            println!(
+                "  spawn pinned (rt): {}ms",
+                start_time.elapsed().as_millis()
+            );
+        }
+
         // Spawn with default runtime.
         {
             let start_time = Instant::now();
             let mut handles = Vec::with_capacity(1_000_000);
 
             for _ in 0..1_000_000 {
-                handles.push(tokio::task::spawn(f()));
+                let (tx, rx) = oneshot::channel();
+                spawn(async move {
+                    f().await;
+                    tx.send(()).expect("failed to send!")
+                });
+
+                handles.push(rx);
             }
 
             for handle in handles.into_iter() {
