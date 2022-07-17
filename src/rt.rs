@@ -136,9 +136,6 @@ impl Runtime {
                 let _guard = guard;
 
                 f().await;
-
-                // If you remove this sleep, execution will become significantly slower (up to ~50%).
-                tokio::time::sleep(Duration::ZERO).await;
             });
         }));
     }

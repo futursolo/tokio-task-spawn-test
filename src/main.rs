@@ -10,6 +10,9 @@ mod rt;
 
 pub use rt::Runtime;
 
+#[global_allocator]
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 async fn run_test<Fut>(f: fn() -> Fut)
 where
     Fut: 'static + Send + Future<Output = ()>,
