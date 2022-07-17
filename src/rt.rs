@@ -2,8 +2,8 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::stream::StreamExt;
 
 use std::future::Future;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
+// use std::sync::atomic::AtomicUsize;
+// use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime as BaseRuntime};
@@ -12,7 +12,7 @@ use tokio::task::{spawn_local, LocalSet};
 type SpawnTask = Box<dyn Send + FnOnce()>;
 
 struct Worker {
-    task_count: Arc<AtomicUsize>,
+    // task_count: Arc<AtomicUsize>,
     tx: UnboundedSender<SpawnTask>,
 }
 
@@ -20,7 +20,7 @@ impl Worker {
     fn new(rt_inner: Arc<BaseRuntime>) -> Self {
         let (tx, mut rx) = futures::channel::mpsc::unbounded::<SpawnTask>();
 
-        let task_count: Arc<AtomicUsize> = Arc::default();
+        // let task_count: Arc<AtomicUsize> = Arc::default();
 
         std::thread::Builder::new()
             .name("yew-runtime-worker".into())
@@ -35,24 +35,27 @@ impl Worker {
             })
             .expect("failed to spawn worker thread.");
 
-        Self { task_count, tx }
+        Self {
+            // task_count,
+            tx,
+        }
     }
 }
 
-pub struct JobCountGuard(Arc<AtomicUsize>);
+// pub struct JobCountGuard(Arc<AtomicUsize>);
 
-impl JobCountGuard {
-    fn new(inner: Arc<AtomicUsize>) -> Self {
-        inner.fetch_add(1, Ordering::Relaxed);
-        JobCountGuard(inner)
-    }
-}
+// impl JobCountGuard {
+//     fn new(inner: Arc<AtomicUsize>) -> Self {
+//         inner.fetch_add(1, Ordering::Relaxed);
+//         JobCountGuard(inner)
+//     }
+// }
 
-impl Drop for JobCountGuard {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::Relaxed);
-    }
-}
+// impl Drop for JobCountGuard {
+//     fn drop(&mut self) {
+//         self.0.fetch_sub(1, Ordering::Relaxed);
+//     }
+// }
 
 #[derive(Clone)]
 pub struct Runtime {
@@ -89,51 +92,51 @@ impl Runtime {
         self.inner.spawn(f);
     }
 
-    // fn find_random_worker(&self) -> &Worker {
-    //     use rand::prelude::SliceRandom;
-    //     use rand::thread_rng;
+    fn find_random_worker(&self) -> &Worker {
+        use rand::prelude::SliceRandom;
+        use rand::thread_rng;
 
-    //     let mut rng = thread_rng();
-    //     self.workers
-    //         .choose(&mut rng)
-    //         .expect("must have more than 1 worker.")
-    // }
-
-    fn find_least_busy_worker(&self) -> &Worker {
-        let mut workers = self.workers.iter();
-
-        let mut worker = workers.next().expect("must have more than 1 worker.");
-        let mut task_count = worker.task_count.load(Ordering::Relaxed);
-
-        for current_worker in workers {
-            if task_count == 0 {
-                // Use a for loop here so we don't have to search until the end.
-                break;
-            }
-
-            let current_worker_task_count = current_worker.task_count.load(Ordering::Relaxed);
-
-            if current_worker_task_count < task_count {
-                task_count = current_worker_task_count;
-                worker = current_worker;
-            }
-        }
-
-        worker
+        let mut rng = thread_rng();
+        self.workers
+            .choose(&mut rng)
+            .expect("must have more than 1 worker.")
     }
+
+    // fn find_least_busy_worker(&self) -> &Worker {
+    //     let mut workers = self.workers.iter();
+
+    //     let mut worker = workers.next().expect("must have more than 1 worker.");
+    //     let mut task_count = worker.task_count.load(Ordering::Relaxed);
+
+    //     for current_worker in workers {
+    //         if task_count == 0 {
+    //             // Use a for loop here so we don't have to search until the end.
+    //             break;
+    //         }
+
+    //         let current_worker_task_count = current_worker.task_count.load(Ordering::Relaxed);
+
+    //         if current_worker_task_count < task_count {
+    //             task_count = current_worker_task_count;
+    //             worker = current_worker;
+    //         }
+    //     }
+
+    //     worker
+    // }
 
     pub fn spawn_pinned<F, Fur>(&self, f: F)
     where
         F: FnOnce() -> Fur + Send + 'static,
         Fur: Future<Output = ()> + 'static,
     {
-        let worker = self.find_least_busy_worker();
-        let task_count = worker.task_count.clone();
-        let guard = JobCountGuard::new(task_count);
+        let worker = self.find_random_worker();
+        // let task_count = worker.task_count.clone();
+        // let guard = JobCountGuard::new(task_count);
 
         let _ = worker.tx.unbounded_send(Box::new(move || {
             spawn_local(async move {
-                let _guard = guard;
+                // let _guard = guard;
 
                 f().await;
             });
