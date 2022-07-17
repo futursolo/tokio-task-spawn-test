@@ -1,5 +1,4 @@
-use futures::channel::mpsc::UnboundedSender;
-use futures::stream::StreamExt;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
 use std::future::Future;
 // use std::sync::atomic::AtomicUsize;
@@ -18,7 +17,7 @@ struct Worker {
 
 impl Worker {
     fn new(rt_inner: Arc<BaseRuntime>) -> Self {
-        let (tx, mut rx) = futures::channel::mpsc::unbounded::<SpawnTask>();
+        let (tx, mut rx) = unbounded_channel::<SpawnTask>();
 
         // let task_count: Arc<AtomicUsize> = Arc::default();
 
@@ -28,7 +27,7 @@ impl Worker {
                 let local_set = LocalSet::new();
 
                 rt_inner.block_on(local_set.run_until(async move {
-                    while let Some(m) = rx.next().await {
+                    while let Some(m) = rx.recv().await {
                         m();
                     }
                 }));
@@ -134,7 +133,7 @@ impl Runtime {
         // let task_count = worker.task_count.clone();
         // let guard = JobCountGuard::new(task_count);
 
-        let _ = worker.tx.unbounded_send(Box::new(move || {
+        let _ = worker.tx.send(Box::new(move || {
             spawn_local(async move {
                 // let _guard = guard;
 
